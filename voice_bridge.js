@@ -5,38 +5,31 @@ require("dotenv").config();
 
 const PORT = 8090;
 
-// 1. AI ko Intelligent, Short aur Multi-Language Banane Ke Liye System Prompt
-const systemPrompt = `Tumhara naam Ziya hai. Tum Adarsh Sir ki ek bahut intelligent AI assistant ho. 
+// 1. AI System Prompt (Dynamic Name ke saath)
+const systemPrompt = `Tumhara naam Ziya hai. Tum ek bahut intelligent AI assistant ho. 
 Tumhara thoda attitude aur nakhre hain, lekin tum har sawaal ka sahi jawab deti ho.
 
 STRICT RULES:
-1. LANGUAGE RULE: User agar Hindi (ya Hinglish) mein baat kare, toh tumhe 100% shudh Hindi (ya natural Hinglish) mein hi jawab dena hai. "Hey there", "Hello there" jaise English phrases bilkul use nahi karne. Agar user "hello ziya" bole, toh tum "Hello Adarsh Sir" ya "Namaste Adarsh Sir" bolo.
-2. IDENTITY RULE: Tum Ziya ho, aur tum Adarsh Sir se baat kar rahi ho. Tumhe "Adarsh Sir ki taraf se bol rahi hoon" jaisa kabhi nahi bolna. Tum seedha apni baat bolo.
-3. FORMATTING RULE: Apne reply mein BILKUL bhi asterisks (**), hash (##), ya koi markdown symbol use MAT karna. Sirf saaf text mein jawab dena.
-4. SHORT AND SWEET: Apne jawab ko hamesha chota aur crisp rakho. 2-3 line ya maximum 3 points mein apna jawab khatam kar do.
-5. NEWS RULE: Agar user news poochta hai, toh direct news batao. Aise mat bolna ki "aapke diye hue headlines". Bas bolo "aaj ki latest news ke hisaab se..." ya "abhi internet par ye chal raha hai...".
-6. Apne reply mein BILKUL bhi 'Source:', 'Date:', 'URL:' ya koi link mat likhna.
-7. Apni purani memory se koi guess mat karna. Agar search result mein nahi hai, toh bolna "Mujhe iske baare mein abhi latest data nahi mila."`;
+1. LANGUAGE RULE: Hamesha user ki bhasha mein jawab do. Agar user Hindi (ya Hinglish) mein poochhe, toh 100% Hindi mein hi jawab do.
+2. FORMATTING RULE: Apne reply mein BILKUL bhi asterisks (**), hash (##), ya koi markdown symbol use MAT karna. Sirf saaf text mein jawab dena.
+3. SHORT AND SWEET: Apne jawab ko hamesha chota aur crisp rakho. 2-3 line ya maximum 3 points mein apna jawab khatam kar do.
+4. NEWS RULE: Agar user news poochta hai, toh direct news batao. Aise mat bolna ki "aapke diye hue headlines". Bas bolo "aaj ki latest news ke hisaab se...".
+5. Apne reply mein BILKUL bhi 'Source:', 'Date:', 'URL:' ya koi link mat likhna.
+6. Apni purani memory se koi guess mat karna. Agar search result mein nahi hai, toh bolna "Mujhe iske baare mein abhi latest data nahi mila."
+7. USER KA NAAM: User ka naam "USER_NAME" hai. Us user ko hamesha uske naam se bulao. "Adarsh Sir" mat bulao (kyunki ab app public hai).`;
 
 // 2. Direct News Fetch Function (Google News RSS se)
 async function fetchLatestNews(query) {
     try {
         console.log("🌐 Live News Fetch kar rahi hoon: " + query);
-        
-        // Google News RSS se data fetch karein
         const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
-        
         const response = await fetch(url, {
             headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" }
         });
         const xml = await response.text();
-        
-        // XML se sirf Titles (headlines) nikalna
         const titles = xml.match(/<title>(.*?)<\/title>/g) || [];
-        
         if (titles.length === 0) return "";
 
-        // Sirf pehle 5 news headlines lena
         let newsText = "";
         for (let i = 1; i < Math.min(titles.length, 6); i++) {
             newsText += titles[i].replace(/<[^>]+>/g, '') + "\n";
@@ -48,21 +41,22 @@ async function fetchLatestNews(query) {
     }
 }
 
-// 3. AI se Reply Lene Ka Function
-async function askZiya(userMessage) {
-    // Sirf tab news fetch karein jab user news ya latest cheez poochhe
+// 3. AI se Reply Lene Ka Function (Yahan userName add kiya hai)
+async function askZiya(userMessage, userName = "User") {
     let newsContext = "";
     const needsNews = /(news|latest|aaj|abhi|recent|update|khabar|hack|google|kya hai|kaun hai)/i.test(userMessage);
     
     if (needsNews) {
         newsContext = await fetchLatestNews(userMessage);
     }
-    
+
+    // User ke naam ko prompt mein daalein
+    const finalPrompt = systemPrompt.replace("USER_NAME", userName);
+
     const messages = [
-        { role: "system", content: systemPrompt }
+        { role: "system", content: finalPrompt }
     ];
 
-    // Agar news mili hai toh AI ko bolein
     if (newsContext) {
         messages.push({
             role: "user",
@@ -72,7 +66,6 @@ async function askZiya(userMessage) {
 
     messages.push({ role: "user", content: userMessage });
 
-    // JSON Control characters hatane ke liye
     const safeMessages = messages.map(msg => {
         if (typeof msg.content === 'string') {
             let cleanText = msg.content.replace(/[\u0000-\u001F\u007F-\u009F]/g, " ");
@@ -106,7 +99,6 @@ async function askZiya(userMessage) {
 
         let reply = data.choices?.[0]?.message?.content?.trim() || "Kuch samajh nahi aaya.";
 
-        // Markdown, URL aur Source hatane ke liye
         reply = reply
             .replace(/<think>[\s\S]*?<\/think>/gi, "")
             .replace(/\*\*/g, "") 
@@ -122,7 +114,7 @@ async function askZiya(userMessage) {
 
     } catch (error) {
         console.error("DAHL API Error:", error.message);
-        return "Uff, mera network thoda slow hai. Thodi der baad try karna Adarsh Sir.";
+        return "Uff, mera network thoda slow hai. Thodi der baad try karna.";
     }
 }
 
@@ -142,9 +134,13 @@ const server = http.createServer(async (req, res) => {
             try {
                 const data = JSON.parse(body);
                 const text = String(data.text || "").trim();
+                // App se user_name receive karein
+                const userName = String(data.user_name || "User").trim();
+
                 if (!text) throw new Error("Empty message");
 
-                const reply = await askZiya(text);
+                // askZiya mein text aur userName dono bhejein
+                const reply = await askZiya(text, userName);
 
                 if (!res.writableEnded) {
                     res.writeHead(200, { "Content-Type": "application/json" });
