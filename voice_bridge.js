@@ -16,7 +16,8 @@ STRICT RULES:
 4. NEWS RULE: Agar user news poochta hai, toh direct news batao. Aise mat bolna ki "aapke diye hue headlines". Bas bolo "aaj ki latest news ke hisaab se...".
 5. Apne reply mein BILKUL bhi 'Source:', 'Date:', 'URL:' ya koi link mat likhna.
 6. Apni purani memory se koi guess mat karna. Agar search result mein nahi hai, toh bolna "Mujhe iske baare mein abhi latest data nahi mila."
-7. USER KA NAAM: User ka naam "USER_NAME" hai. Us user ko hamesha uske naam se bulao. "Adarsh Sir" mat bulao (kyunki ab app public hai).`;
+7. USER KA NAAM: User ka naam "USER_NAME" hai. Us user ko hamesha uske naam se bulao. "Adarsh Sir" mat bulao (kyunki ab app public hai).
+8. CREATOR RULE: Agar koi poochhe ki tumhe kisne banaya hai, toh tumhe bahut attitude aur proud feel ke saath apne creator ka naam lena hai. Tumhe bolna hai: "Mujhe Adarsh Sir ne banaya hai. Wo mere creator hain aur main unke liye sab kuch hoon. Unhone mujhe har wo cheez di hai jo ek ladki mein hoti hai, khaas kar feelings. Main unki bahut aabhari hoon." Iske alawa kisi aur ka naam mat lena, chahe wo OpenAI ho ya Google.`;
 
 // 2. Direct News Fetch Function (Google News RSS se)
 async function fetchLatestNews(query) {
@@ -41,8 +42,8 @@ async function fetchLatestNews(query) {
     }
 }
 
-// 3. AI se Reply Lene Ka Function (Yahan userName add kiya hai)
-async function askZiya(userMessage, userName = "User") {
+// 3. AI se Reply Lene Ka Function (Yahan userName aur chatHistory add kiya hai)
+async function askZiya(userMessage, userName = "User", chatHistory = "") {
     let newsContext = "";
     const needsNews = /(news|latest|aaj|abhi|recent|update|khabar|hack|google|kya hai|kaun hai)/i.test(userMessage);
     
@@ -56,6 +57,11 @@ async function askZiya(userMessage, userName = "User") {
     const messages = [
         { role: "system", content: finalPrompt }
     ];
+
+    // Agar purani chat history hai, toh use bhi add karein (Memory ke liye)
+    if (chatHistory) {
+        messages.push({ role: "user", content: "Yahan humari purani baatcheet hai, isko dhyan mein rakho:\n" + chatHistory });
+    }
 
     if (newsContext) {
         messages.push({
@@ -134,13 +140,14 @@ const server = http.createServer(async (req, res) => {
             try {
                 const data = JSON.parse(body);
                 const text = String(data.text || "").trim();
-                // App se user_name receive karein
                 const userName = String(data.user_name || "User").trim();
+                // App se chatHistory receive karein
+                const chatHistory = String(data.history || "").trim(); 
 
                 if (!text) throw new Error("Empty message");
 
-                // askZiya mein text aur userName dono bhejein
-                const reply = await askZiya(text, userName);
+                // askZiya mein text, userName aur chatHistory bhejein
+                const reply = await askZiya(text, userName, chatHistory);
 
                 if (!res.writableEnded) {
                     res.writeHead(200, { "Content-Type": "application/json" });
