@@ -36,17 +36,21 @@ async function fetchLatestNews(query) {
     }
 }
 
-// 3. Gemini Vision se photo padhna
+// 3. Gemini Vision se photo padhna (Base64 Fix ke saath)
 async function analyzeImageWithGemini(imageBase64, userMessage) {
     try {
         console.log("👁️ Gemini se photo dekh rahi hoon...");
+        
+        // YAHAN FIX: Base64 ke aage se prefix hata dein
+        const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
         
         const payload = {
             contents: [{
                 parts: [
                     { text: userMessage + " (User ne ye photo bheji hai. Isme kya hai? Detail mein batao taaki main samajh saku.)" },
-                    { inline_data: { mime_type: "image/jpeg", data: imageBase64 } }
+                    { inline_data: { mime_type: "image/jpeg", data: cleanBase64 } } // Clean base64 bhejein
                 ]
             }]
         };
