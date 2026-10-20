@@ -36,7 +36,7 @@ async function fetchLatestNews(query) {
     }
 }
 
-// 3. Gemini Vision se photo padhna (Naya Model)
+// 3. Gemini Vision se photo padhna (LATEST MODEL)
 async function analyzeImageWithGemini(imageBase64, userMessage) {
     try {
         console.log("👁️ Gemini se photo dekh rahi hoon...");
@@ -44,8 +44,8 @@ async function analyzeImageWithGemini(imageBase64, userMessage) {
         let cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
         cleanBase64 = cleanBase64.replace(/\s/g, "");
 
-        // YAHAN NAYA MODEL USE KIYA HAI
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+        // YAHAN LATEST MODEL USE KIYA HAI
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
         
         const payload = {
             contents: [{
