@@ -43,7 +43,7 @@ async function fetchLatestNews(query) {
 }
 
 // 3. AI se Reply Lene Ka Function (Yahan userName aur chatHistory add kiya hai)
-async function askZiya(userMessage, userName = "User", chatHistory = "") {
+async function askZiya(userMessage, userName = "User", chatHistory = "", imageBase64 = null) {
     let newsContext = "";
     const needsNews = /(news|latest|aaj|abhi|recent|update|khabar|hack|google|kya hai|kaun hai)/i.test(userMessage);
     
@@ -70,7 +70,13 @@ async function askZiya(userMessage, userName = "User", chatHistory = "") {
         });
     }
 
-    messages.push({ role: "user", content: userMessage });
+    // Agar image aayi hai toh AI ko batayein
+    let finalUserMessage = userMessage;
+    if (imageBase64) {
+        finalUserMessage = userMessage + "\n\n[NOTE: User ne ek photo bheji hai. Tum abhi photos nahi dekh sakti (Vision feature abhi add nahi hua hai). User ko politely batao ki tumhe photo mil gayi hai, par tum abhi use dekh nahi sakti. Jald hi ye feature aayega.]";
+    }
+
+    messages.push({ role: "user", content: finalUserMessage });
 
     const safeMessages = messages.map(msg => {
         if (typeof msg.content === 'string') {
@@ -134,20 +140,20 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && req.url === "/ask") {
         let body = "";
-        req.on("data", chunk => { body += chunk; if (body.length > 100000) req.destroy(); });
+        req.on("data", chunk => { body += chunk; if (body.length > 500000) req.destroy(); }); // Size limit badhai (images ke liye)
 
         req.on("end", async () => {
             try {
                 const data = JSON.parse(body);
                 const text = String(data.text || "").trim();
                 const userName = String(data.user_name || "User").trim();
-                // App se chatHistory receive karein
                 const chatHistory = String(data.history || "").trim(); 
+                const imageBase64 = data.image || null; // Photo receive karein
 
                 if (!text) throw new Error("Empty message");
 
-                // askZiya mein text, userName aur chatHistory bhejein
-                const reply = await askZiya(text, userName, chatHistory);
+                // askZiya mein text, userName, chatHistory aur image bhejein
+                const reply = await askZiya(text, userName, chatHistory, imageBase64);
 
                 if (!res.writableEnded) {
                     res.writeHead(200, { "Content-Type": "application/json" });
