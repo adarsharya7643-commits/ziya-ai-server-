@@ -36,13 +36,14 @@ async function fetchLatestNews(query) {
     }
 }
 
-// 3. Gemini Vision se photo padhna (Base64 Fix ke saath)
+// 3. Gemini Vision se photo padhna (Pukka Fix)
 async function analyzeImageWithGemini(imageBase64, userMessage) {
     try {
         console.log("👁️ Gemini se photo dekh rahi hoon...");
         
-        // YAHAN FIX: Base64 ke aage se prefix hata dein
-        const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+        // Base64 fix: Prefix hata dein aur extra space/newline clean karein
+        let cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
+        cleanBase64 = cleanBase64.replace(/\s/g, "");
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
         
@@ -50,7 +51,7 @@ async function analyzeImageWithGemini(imageBase64, userMessage) {
             contents: [{
                 parts: [
                     { text: userMessage + " (User ne ye photo bheji hai. Isme kya hai? Detail mein batao taaki main samajh saku.)" },
-                    { inline_data: { mime_type: "image/jpeg", data: cleanBase64 } } // Clean base64 bhejein
+                    { inline_data: { mime_type: "image/jpeg", data: cleanBase64 } }
                 ]
             }]
         };
@@ -65,6 +66,7 @@ async function analyzeImageWithGemini(imageBase64, userMessage) {
         if (data.candidates && data.candidates.length > 0) {
             return data.candidates[0].content.parts[0].text;
         }
+        console.log("Gemini Response:", JSON.stringify(data)); // Debug ke liye
         return "Mujhe photo samajh nahi aayi.";
     } catch (e) {
         console.log("Gemini Vision Error:", e.message);
@@ -101,9 +103,10 @@ async function askZiya(userMessage, userName = "User", chatHistory = "", imageBa
             const data = await response.json();
             if (data.choices && data.choices.length > 0) {
                 let reply = data.choices[0].message.content.trim();
-                // YEH LINE THINK TAG HATAYEGI
-                reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
-                return reply;
+                // <think> ko 100% hatane ka pukka tarika
+                reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, "");
+                reply = reply.replace(/<think>[\s\S]*/gi, "");
+                return reply.trim();
             }
         } catch (e) {
             return "Photo dekh li hai, par jawab dene mein dikkat aa rahi hai.";
@@ -149,7 +152,10 @@ async function askZiya(userMessage, userName = "User", chatHistory = "", imageBa
         if (!response.ok) throw new Error("API Error");
 
         let reply = data.choices?.[0]?.message?.content?.trim() || "Kuch samajh nahi aaya.";
-        return reply.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/\*\*/g, "").replace(/##/g, "").trim();
+        // Think tag aur markdown hatayein
+        reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, "");
+        reply = reply.replace(/<think>[\s\S]*/gi, "");
+        return reply.replace(/\*\*/g, "").replace(/##/g, "").trim();
 
     } catch (error) {
         return "Uff, mera network thoda slow hai. Thodi der baad try karna.";
