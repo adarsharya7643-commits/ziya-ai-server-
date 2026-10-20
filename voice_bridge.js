@@ -36,7 +36,7 @@ async function fetchLatestNews(query) {
     }
 }
 
-// 3. NAYA FUNCTION: Gemini Vision se photo padhna
+// 3. Gemini Vision se photo padhna
 async function analyzeImageWithGemini(imageBase64, userMessage) {
     try {
         console.log("👁️ Gemini se photo dekh rahi hoon...");
@@ -77,7 +77,7 @@ async function askZiya(userMessage, userName = "User", chatHistory = "", imageBa
         const finalPrompt = systemPrompt.replace("USER_NAME", userName);
         const messages = [
             { role: "system", content: finalPrompt },
-            { role: "user", content: `User ne ek photo bheji hai. Gemini Vision AI ne photo ke baare mein ye bataya: "${visionDescription}". Ab tum apni Ziya wali personality ke saath user ko is photo ke baare mein batao. Short aur crisp jawab dena.` }
+            { role: "user", content: `User ne ek photo bheji hai. Gemini Vision AI ne photo ke baare mein ye bataya: "${visionDescription}". Ab tum apni Ziya wali personality ke saath user ko is photo ke baare mein batao. Short aur crisp jawab dena. Apni soch (thinking) BILKUL mat dikhana.` }
         ];
 
         try {
@@ -96,7 +96,10 @@ async function askZiya(userMessage, userName = "User", chatHistory = "", imageBa
             });
             const data = await response.json();
             if (data.choices && data.choices.length > 0) {
-                return data.choices[0].message.content.trim();
+                let reply = data.choices[0].message.content.trim();
+                // YEH LINE THINK TAG HATAYEGI
+                reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+                return reply;
             }
         } catch (e) {
             return "Photo dekh li hai, par jawab dene mein dikkat aa rahi hai.";
