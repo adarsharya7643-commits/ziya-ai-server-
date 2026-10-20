@@ -4,8 +4,9 @@ const path = require("path");
 require("dotenv").config();
 
 const PORT = 8090;
+const GEMINI_KEY = process.env.GEMINI_API_KEY;
 
-// 1. AI System Prompt
+// 1. System Prompt
 const systemPrompt = `Tumhara naam Ziya hai. Tum ek bahut intelligent AI assistant ho. 
 Tumhara thoda attitude aur nakhre hain, lekin tum har sawaal ka sahi jawab deti ho.
 
@@ -18,44 +19,35 @@ STRICT RULES:
 6. USER KA NAAM: User ka naam "USER_NAME" hai. Us user ko hamesha uske naam se bulao.
 7. CREATOR RULE: Agar koi poochhe ki tumhe kisne banaya hai, toh proud feel ke saath bolo ki "Mujhe Adarsh Sir ne banaya hai."`;
 
-// 2. Direct News Fetch Function
-async function fetchLatestNews(query) {
-    try {
-        const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
-        const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-        const xml = await response.text();
-        const titles = xml.match(/<title>(.*?)<\/title>/g) || [];
-        if (titles.length === 0) return "";
-        let newsText = "";
-        for (let i = 1; i < Math.min(titles.length, 6); i++) {
-            newsText += titles[i].replace(/<[^>]+>/g, '') + "\n";
-        }
-        return newsText.trim();
-    } catch (e) {
-        return "";
+// 2. Gemini API Call Function (Text + Image dono ke liye)
+async function askGemini(userMessage, userName, chatHistory, imageBase64 = null) {
+    const finalPrompt = systemPrompt.replace("USER_NAME", userName);
+    
+    // History ko format karein
+    let historyText = "";
+    if (chatHistory) {
+        historyText = "Purani baatcheet:\n" + chatHistory + "\n\n";
     }
-}
 
-// 3. Gemini Vision se photo padhna (LATEST MODEL)
-async function analyzeImageWithGemini(imageBase64, userMessage) {
-    try {
-        console.log("👁️ Gemini se photo dekh rahi hoon...");
-        
+    const fullText = `${finalPrompt}\n\n${historyText}User: ${userMessage}`;
+
+    const parts = [{ text: fullText }];
+    
+    // Agar photo hai toh add karein
+    if (imageBase64) {
         let cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
         cleanBase64 = cleanBase64.replace(/\s/g, "");
+        parts.push({
+            inline_data: { mime_type: "image/jpeg", data: cleanBase64 }
+        });
+    }
 
-        // YAHAN LATEST MODEL USE KIYA HAI
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${process.env.GEMINI_API_KEY}`;
-        
-        const payload = {
-            contents: [{
-                parts: [
-                    { text: userMessage + " (User ne ye photo bheji hai. Isme kya hai? Detail mein batao taaki main samajh saku.)" },
-                    { inline_data: { mime_type: "image/jpeg", data: cleanBase64 } }
-                ]
-            }]
-        };
+    // Gemini ka latest model use karein
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_KEY}`;
+    
+    const payload = { contents: [{ parts: parts }] };
 
+    try {
         const response = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -63,104 +55,26 @@ async function analyzeImageWithGemini(imageBase64, userMessage) {
         });
 
         const data = await response.json();
-        if (data.candidates && data.candidates.length > 0) {
-            return data.candidates[0].content.parts[0].text;
-        }
-        console.log("Gemini Response Error:", JSON.stringify(data)); 
-        return "Mujhe photo samajh nahi aayi.";
-    } catch (e) {
-        console.log("Gemini Vision Error:", e.message);
-        return "Photo dekhne mein error aa raha hai.";
-    }
-}
-
-// 4. AI se Reply Lene Ka Function
-async function askZiya(userMessage, userName = "User", chatHistory = "", imageBase64 = null) {
-    // Agar photo aayi hai, toh pehle Gemini se padhein
-    if (imageBase64) {
-        const visionDescription = await analyzeImageWithGemini(imageBase64, userMessage);
         
-        const finalPrompt = systemPrompt.replace("USER_NAME", userName);
-        const messages = [
-            { role: "system", content: finalPrompt },
-            { role: "user", content: `User ne ek photo bheji hai. Gemini Vision AI ne photo ke baare mein ye bataya: "${visionDescription}". Ab tum apni Ziya wali personality ke saath user ko is photo ke baare mein batao. Short aur crisp jawab dena. Apni soch (thinking) BILKUL mat dikhana.` }
-        ];
-
-        try {
-            const response = await fetch("https://inference.dahl.global/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                    "Authorization": `Bearer ${process.env.DAHL_API_KEY}`,
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify({
-                    model: "MiniMaxAI/MiniMax-M2.7",
-                    messages: messages,
-                    max_tokens: 300,
-                    temperature: 0.6
-                })
-            });
-            const data = await response.json();
-            if (data.choices && data.choices.length > 0) {
-                let reply = data.choices[0].message.content.trim();
-                reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, "");
-                reply = reply.replace(/<think>[\s\S]*/gi, "");
-                return reply.trim();
-            }
-        } catch (e) {
-            return "Photo dekh li hai, par jawab dene mein dikkat aa rahi hai.";
+        if (data.candidates && data.candidates.length > 0) {
+            let reply = data.candidates[0].content.parts[0].text.trim();
+            // Markdown aur think tags hatayein
+            reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, "");
+            reply = reply.replace(/<think>[\s\S]*/gi, "");
+            reply = reply.replace(/\*\*/g, "").replace(/##/g, "");
+            return reply.trim();
         }
-    }
+        
+        console.log("Gemini Error:", JSON.stringify(data));
+        return "Mujhe jawab dene mein dikkat aa rahi hai.";
 
-    // Agar photo nahi hai, toh normal text wala logic chalega
-    let newsContext = "";
-    const needsNews = /(news|latest|aaj|abhi|recent|update|khabar)/i.test(userMessage);
-    if (needsNews) newsContext = await fetchLatestNews(userMessage);
-
-    const finalPrompt = systemPrompt.replace("USER_NAME", userName);
-    const messages = [{ role: "system", content: finalPrompt }];
-
-    if (chatHistory) messages.push({ role: "user", content: "Purani baatcheet:\n" + chatHistory });
-    if (newsContext) messages.push({ role: "user", content: `Latest news:\n${newsContext}` });
-    
-    messages.push({ role: "user", content: userMessage });
-
-    const safeMessages = messages.map(msg => {
-        if (typeof msg.content === 'string') {
-            return { ...msg, content: msg.content.replace(/[\u0000-\u001F\u007F-\u009F]/g, " ") };
-        }
-        return msg;
-    });
-
-    try {
-        const response = await fetch("https://inference.dahl.global/v1/chat/completions", {
-            method: "POST",
-            headers: {
-                "Authorization": `Bearer ${process.env.DAHL_API_KEY}`,
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                model: "MiniMaxAI/MiniMax-M2.7",
-                messages: safeMessages,
-                max_tokens: 600,
-                temperature: 0.4
-            })
-        });
-
-        const data = await response.json();
-        if (!response.ok) throw new Error("API Error");
-
-        let reply = data.choices?.[0]?.message?.content?.trim() || "Kuch samajh nahi aaya.";
-        reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, "");
-        reply = reply.replace(/<think>[\s\S]*/gi, "");
-        return reply.replace(/\*\*/g, "").replace(/##/g, "").trim();
-
-    } catch (error) {
+    } catch (e) {
+        console.log("Error:", e.message);
         return "Uff, mera network thoda slow hai. Thodi der baad try karna.";
     }
 }
 
-// 5. Server Setup
+// 3. Server Setup
 const server = http.createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
@@ -182,7 +96,8 @@ const server = http.createServer(async (req, res) => {
 
                 if (!text) throw new Error("Empty message");
 
-                const reply = await askZiya(text, userName, chatHistory, imageBase64);
+                // Ab sirf Gemini use hoga
+                const reply = await askGemini(text, userName, chatHistory, imageBase64);
 
                 if (!res.writableEnded) {
                     res.writeHead(200, { "Content-Type": "application/json" });
