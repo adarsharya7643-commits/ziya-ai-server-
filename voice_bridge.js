@@ -12,20 +12,22 @@ STRICT RULES:
 1. LANGUAGE RULE: Hamesha user ki bhasha mein jawab do.
 2. FORMATTING RULE: Apne reply mein BILKUL bhi asterisks (**), hash (##), ya koi markdown symbol use MAT karna.
 3. SHORT AND SWEET: Apne jawab ko hamesha chota aur crisp rakho.
-4. NEWS RULE: Agar user news poochta hai, toh direct news batao.
-5. Apne reply mein BILKUL bhi 'Source:', 'Date:', 'URL:' ya koi link mat likhna.
-6. USER KA NAAM: User ka naam "USER_NAME" hai. Us user ko hamesha uske naam se bulao.
-7. CREATOR RULE: Agar koi poochhe ki tumhe kisne banaya hai, toh proud feel ke saath bolo ki "Mujhe Adarsh Sir ne banaya hai."`;
+4. USER KA NAAM: User ka naam "USER_NAME" hai. Us user ko hamesha uske naam se bulao.
+5. CREATOR RULE: Agar koi poochhe ki tumhe kisne banaya hai, toh proud feel ke saath bolo ki "Mujhe Adarsh Sir ne banaya hai."`;
 
-// 2. Gemini API Function (Fast + Vision)
-async function askGemini(userMessage, finalPrompt, chatHistory, imageBase64) {
+// 2. Gemini API Function (Multi-Image Support)
+async function askGemini(userMessage, finalPrompt, chatHistory, imagesArray) {
     let historyText = chatHistory ? "Purani baatcheet:\n" + chatHistory.slice(-500) + "\n\n" : "";
     const fullText = `${finalPrompt}\n\n${historyText}User: ${userMessage}`;
+    
     const parts = [{ text: fullText }];
     
-    if (imageBase64) {
-        let cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "").replace(/\s/g, "");
-        parts.push({ inline_data: { mime_type: "image/jpeg", data: cleanBase64 } });
+    // Saari photos ko parts mein add karein
+    if (imagesArray && imagesArray.length > 0) {
+        imagesArray.forEach(img => {
+            let cleanBase64 = img.replace(/^data:image\/\w+;base64,/, "").replace(/\s/g, "");
+            parts.push({ inline_data: { mime_type: "image/jpeg", data: cleanBase64 } });
+        });
     }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_KEY}`;
@@ -44,20 +46,14 @@ async function askGemini(userMessage, finalPrompt, chatHistory, imageBase64) {
         return reply.replace(/\*\*/g, "").replace(/##/g, "").trim();
     }
     
-    // Agar Gemini fail hota hai (Limit khatam), toh Error throw karein
     throw new Error("Gemini Failed: " + JSON.stringify(data.error));
 }
 
-// 3. DAHL API Function (Backup)
-async function askDahl(userMessage, finalPrompt, chatHistory, imageBase64) {
+// 3. DAHL API Function (Text Backup)
+async function askDahl(userMessage, finalPrompt, chatHistory) {
     const messages = [{ role: "system", content: finalPrompt }];
     if (chatHistory) messages.push({ role: "user", content: "Purani baatcheet:\n" + chatHistory.slice(-1000) });
-    
-    // Agar photo hai, toh text mein batao (kyunki DAHL vision nahi hai)
-    let finalMsg = userMessage;
-    if (imageBase64) finalMsg += " (User ne photo bheji hai, par tum abhi use dekh nahi sakti.)";
-    
-    messages.push({ role: "user", content: finalMsg });
+    messages.push({ role: "user", content: userMessage });
 
     const response = await fetch("https://inference.dahl.global/v1/chat/completions", {
         method: "POST",
@@ -84,7 +80,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && req.url === "/ask") {
         let body = "";
-        req.on("data", chunk => { body += chunk; if (body.length > 500000) req.destroy(); });
+        req.on("data", chunk => { body += chunk; if (body.length > 10000000) req.destroy(); }); // Size limit badha di (10MB)
 
         req.on("end", async () => {
             try {
@@ -92,23 +88,32 @@ const server = http.createServer(async (req, res) => {
                 const text = String(data.text || "").trim();
                 const userName = String(data.user_name || "User").trim();
                 const chatHistory = String(data.history || "").trim(); 
-                const imageBase64 = data.image || null;
+                const imagesArray = data.images || []; // Array receive karein
 
                 if (!text) throw new Error("Empty message");
 
                 const finalPrompt = systemPrompt.replace("USER_NAME", userName);
                 let finalReply = "";
 
-                // PEHLE GEMINI TRY KARENGE
-                try {
-                    console.log("⚡ Trying Gemini API...");
-                    finalReply = await askGemini(text, finalPrompt, chatHistory, imageBase64);
-                    console.log("✅ Gemini Success!");
-                } catch (geminiError) {
-                    // AGAR GEMINI FAIL HUA (Limit khatam), TOH DAHL USE KARENGE
-                    console.log("⚠️ Gemini Limit Exceeded, switching to DAHL API...");
-                    finalReply = await askDahl(text, finalPrompt, chatHistory, imageBase64);
-                    console.log("✅ DAHL Success!");
+                // AGAR PHOTOS HAIN
+                if (imagesArray.length > 0) {
+                    try {
+                        console.log(`⚡ Trying Gemini for ${imagesArray.length} Photos...`);
+                        finalReply = await askGemini(text, finalPrompt, chatHistory, imagesArray);
+                    } catch (geminiError) {
+                        console.log("⚠️ Gemini Failed for Photos.");
+                        finalReply = "Mujhe in photos ko dekhne mein thodi dikkat aa rahi hai. Kya aap thodi der baad dobara try kar sakte hain?";
+                    }
+                } 
+                // AGAR SIRF TEXT HAI
+                else {
+                    try {
+                        console.log("⚡ Trying Gemini for Text...");
+                        finalReply = await askGemini(text, finalPrompt, chatHistory, null);
+                    } catch (geminiError) {
+                        console.log("⚠️ Gemini Limit Exceeded, switching to DAHL API...");
+                        finalReply = await askDahl(text, finalPrompt, chatHistory);
+                    }
                 }
 
                 if (!res.writableEnded) {
