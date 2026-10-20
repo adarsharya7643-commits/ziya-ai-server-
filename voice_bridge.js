@@ -36,16 +36,16 @@ async function fetchLatestNews(query) {
     }
 }
 
-// 3. Gemini Vision se photo padhna (Pukka Fix)
+// 3. Gemini Vision se photo padhna (Naya Model)
 async function analyzeImageWithGemini(imageBase64, userMessage) {
     try {
         console.log("👁️ Gemini se photo dekh rahi hoon...");
         
-        // Base64 fix: Prefix hata dein aur extra space/newline clean karein
         let cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, "");
         cleanBase64 = cleanBase64.replace(/\s/g, "");
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+        // YAHAN NAYA MODEL USE KIYA HAI
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
         
         const payload = {
             contents: [{
@@ -66,7 +66,7 @@ async function analyzeImageWithGemini(imageBase64, userMessage) {
         if (data.candidates && data.candidates.length > 0) {
             return data.candidates[0].content.parts[0].text;
         }
-        console.log("Gemini Response:", JSON.stringify(data)); // Debug ke liye
+        console.log("Gemini Response Error:", JSON.stringify(data)); 
         return "Mujhe photo samajh nahi aayi.";
     } catch (e) {
         console.log("Gemini Vision Error:", e.message);
@@ -103,7 +103,6 @@ async function askZiya(userMessage, userName = "User", chatHistory = "", imageBa
             const data = await response.json();
             if (data.choices && data.choices.length > 0) {
                 let reply = data.choices[0].message.content.trim();
-                // <think> ko 100% hatane ka pukka tarika
                 reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, "");
                 reply = reply.replace(/<think>[\s\S]*/gi, "");
                 return reply.trim();
@@ -152,7 +151,6 @@ async function askZiya(userMessage, userName = "User", chatHistory = "", imageBa
         if (!response.ok) throw new Error("API Error");
 
         let reply = data.choices?.[0]?.message?.content?.trim() || "Kuch samajh nahi aaya.";
-        // Think tag aur markdown hatayein
         reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, "");
         reply = reply.replace(/<think>[\s\S]*/gi, "");
         return reply.replace(/\*\*/g, "").replace(/##/g, "").trim();
