@@ -78,9 +78,16 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "OPTIONS") { res.writeHead(200); res.end(); return; }
 
+    // YEH NAYA BLOCK ADD KIYA HAI: UptimeRobot ke liye
+    if (req.method === "GET" || req.method === "HEAD") {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("Ziya Server is awake and running!");
+        return;
+    }
+
     if (req.method === "POST" && req.url === "/ask") {
         let body = "";
-        req.on("data", chunk => { body += chunk; if (body.length > 10000000) req.destroy(); }); // Size limit badha di (10MB)
+        req.on("data", chunk => { body += chunk; if (body.length > 10000000) req.destroy(); });
 
         req.on("end", async () => {
             try {
@@ -88,7 +95,7 @@ const server = http.createServer(async (req, res) => {
                 const text = String(data.text || "").trim();
                 const userName = String(data.user_name || "User").trim();
                 const chatHistory = String(data.history || "").trim(); 
-                const imagesArray = data.images || []; // Array receive karein
+                const imagesArray = data.images || []; 
 
                 if (!text) throw new Error("Empty message");
 
@@ -131,6 +138,7 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // Agar koi aur link khole toh 404
     res.writeHead(404, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Not found" }));
 });
