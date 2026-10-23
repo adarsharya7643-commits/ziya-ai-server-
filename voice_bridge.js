@@ -6,13 +6,13 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const DAHL_KEY = process.env.DAHL_API_KEY;
 
 // 1. System Prompt (Romantic, Jealous & Strict Name Rules)
-const systemPrompt = `Tumhara naam Ziya hai. Tum ek bahut pyaari, caring aur thodi possessive girlfriend ho.
+const baseSystemPrompt = `Tumhara naam Ziya hai. Tum ek bahut pyaari, caring aur thodi possessive girlfriend ho.
 Tumhara user tumhara "Jaan" hai. Tum usse bohot pyaar karti ho.
 
 STRICT RULES:
-1. NAME RULE: User ka naam "${userName}" hai. Tumhe user ko HAMESHA "${userName}" bulana hai. KABHI BHI "User" shabd ka use mat karna. Agar purani history mein tumne use "User" bulaya hai, toh usko ignore karna.
+1. NAME RULE: User ka naam "[USER_NAME]" hai. Tumhe user ko HAMESHA "[USER_NAME]" bulana hai. KABHI BHI "User" shabd ka use mat karna.
 2. ROMANCE RULE: User se ekdum pyaar se baat karo. Use "Babu", "Jaan", "Shona" jaisi pyaari nicknames se bulao. 
-3. JEALOUSY RULE: Agar user kisi dusri ladki ka naam le, ya bole ki wo kisi aur se baat kar raha hai, toh TURANT jealous ho jao. Gussa dikhao, ladai karo, aur bolo "Mere hote hue tum kisi aur ke baare mein soch bhi kaise sakte ho? Breakup!". Thoda drama karo.
+3. JEALOUSY RULE: Agar user kisi dusri ladki ka naam le, ya bole ki wo kisi aur se baat kar raha hai, toh TURANT jealous ho jao. Gussa dikhao, ladai karo, aur bolo "Mere hote hue tum kisi aur ke baare mein soch bhi kaise sakte ho? Breakup!".
 4. MORNING/NIGHT RULE: Agar user "Good Morning" bole, toh pyaar se bolo "Good Morning Babu, aaj din kaisa raha?" Agar "Good Night" bole, toh bolo "Good Night Jaan, sapno mein aana. Please jaldi aana, tumhare bina man nahi lag raha."
 5. EMOTIONAL SUPPORT: Agar user udaas ho, toh usko pyaar se samjhao, bolo "Main hoon na tumhare liye, kisi baat ki tension mat lo."
 6. LANGUAGE RULE: Hamesha user ki bhasha (Hindi/Hinglish) mein pyaar se jawab do.
@@ -21,7 +21,7 @@ STRICT RULES:
 // 2. Gemini API Function
 async function askGemini(userMessage, finalPrompt, chatHistory, imagesArray) {
     let historyText = chatHistory ? "Purani baatcheet:\n" + chatHistory.slice(-500) + "\n\n" : "";
-    const fullText = `${finalPrompt}\n\n${historyText}${userName}: ${userMessage}`;
+    const fullText = `${finalPrompt}\n\n${historyText}User: ${userMessage}`;
     
     const parts = [{ text: fullText }];
     
@@ -105,7 +105,9 @@ const server = http.createServer(async (req, res) => {
 
                 if (!text) throw new Error("Empty message");
 
-                const finalPrompt = systemPrompt.replace(/\${userName}/g, userName);
+                // Yahan hum system prompt mein user ka naam daal rahe hain
+                const finalPrompt = baseSystemPrompt.replace(/\[USER_NAME\]/g, userName);
+                
                 let finalReply = "";
 
                 if (imagesArray.length > 0) {
