@@ -4,6 +4,7 @@ require("dotenv").config();
 const PORT = 8090;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const DAHL_KEY = process.env.DAHL_API_KEY;
+const GROQ_KEY = process.env.GROQ_API_KEY; // Naya Groq Key
 
 // 1. System Prompt (Romantic, Jealous & Strict Name Rules)
 const baseSystemPrompt = `Tumhara naam Ziya hai. Tum ek bahut pyaari, caring aur thodi possessive girlfriend ho.
@@ -18,7 +19,34 @@ STRICT RULES:
 6. LANGUAGE RULE: Hamesha user ki bhasha (Hindi/Hinglish) mein pyaar se jawab do.
 7. FORMATTING: BILKUL bhi markdown (**), hash (##) use mat karna. Sirf saaf text likhna.`;
 
-// 2. Gemini API Function
+// 2. GROQ API (Super Fast Text - Rocket Speed)
+async function askGroq(userMessage, finalPrompt, chatHistory) {
+    let historyText = chatHistory ? "Purani baatcheet:\n" + chatHistory.slice(-500) + "\n\n" : "";
+    const fullText = `${finalPrompt}\n\n${historyText}User: ${userMessage}`;
+
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${GROQ_KEY}`,
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            model: "llama-3.3-70b-versatile", // Groq ka best model
+            messages: [{ role: "user", content: fullText }],
+            max_tokens: 400,
+            temperature: 0.7
+        })
+    });
+
+    const data = await response.json();
+    if (data.choices && data.choices.length > 0) {
+        let reply = data.choices[0].message.content.trim();
+        return reply.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/\*\*/g, "").replace(/##/g, "").trim();
+    }
+    throw new Error("Groq Failed");
+}
+
+// 3. Gemini API (Photos ke liye)
 async function askGemini(userMessage, finalPrompt, chatHistory, imagesArray) {
     let historyText = chatHistory ? "Purani baatcheet:\n" + chatHistory.slice(-500) + "\n\n" : "";
     const fullText = `${finalPrompt}\n\n${historyText}User: ${userMessage}`;
@@ -43,13 +71,12 @@ async function askGemini(userMessage, finalPrompt, chatHistory, imagesArray) {
     const data = await response.json();
     if (data.candidates && data.candidates.length > 0) {
         let reply = data.candidates[0].content.parts[0].text.trim();
-        reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<think>[\s\S]*/gi, "");
-        return reply.replace(/\*\*/g, "").replace(/##/g, "").trim();
+        return reply.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/\*\*/g, "").replace(/##/g, "").trim();
     }
     throw new Error("Gemini Failed");
 }
 
-// 3. DAHL API (Backup)
+// 4. DAHL API (Backup)
 async function askDahl(userMessage, finalPrompt, chatHistory) {
     const messages = [{ role: "system", content: finalPrompt }];
     if (chatHistory) messages.push({ role: "user", content: "Purani baatcheet:\n" + chatHistory.slice(-1000) });
@@ -64,13 +91,12 @@ async function askDahl(userMessage, finalPrompt, chatHistory) {
     const data = await response.json();
     if (data.choices && data.choices.length > 0) {
         let reply = data.choices[0].message.content.trim();
-        reply = reply.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/<think>[\s\S]*/gi, "");
-        return reply.replace(/\*\*/g, "").replace(/##/g, "").trim();
+        return reply.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/\*\*/g, "").replace(/##/g, "").trim();
     }
     throw new Error("DAHL Failed");
 }
 
-// 4. Server Setup
+// 5. Main Server Setup
 const server = http.createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
@@ -78,7 +104,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "OPTIONS") { res.writeHead(200); res.end(); return; }
 
-    // UptimeRobot ke liye
+    // UptimeRobot ke liye (Server ko jaga rakhne ke liye)
     if (req.method === "GET" || req.method === "HEAD") {
         res.writeHead(200, { "Content-Type": "text/plain" });
         res.end("Ziya Server is awake and running!");
@@ -95,7 +121,6 @@ const server = http.createServer(async (req, res) => {
                 const text = String(data.text || "").trim();
                 let userName = String(data.user_name || "Babu").trim();
                 
-                // Agar naam "User" aaya hai, toh use default "Babu" kar dein
                 if (userName === "User" || userName === "") {
                     userName = "Babu";
                 }
@@ -105,22 +130,31 @@ const server = http.createServer(async (req, res) => {
 
                 if (!text) throw new Error("Empty message");
 
-                // Yahan hum system prompt mein user ka naam daal rahe hain
                 const finalPrompt = baseSystemPrompt.replace(/\[USER_NAME\]/g, userName);
-                
                 let finalReply = "";
 
+                // AGAR PHOTO HAI -> GEMINI
                 if (imagesArray.length > 0) {
                     try {
+                        console.log("👁️ Gemini se photo dekh rahi hoon...");
                         finalReply = await askGemini(text, finalPrompt, chatHistory, imagesArray);
-                    } catch (geminiError) {
+                    } catch (err) {
                         finalReply = "Babu, main abhi photos dekh nahi pa rahi hoon. Thodi der baad try karna.";
                     }
-                } else {
+                } 
+                // AGAR SIRF TEXT HAI -> GROQ (Super Fast!)
+                else {
                     try {
-                        finalReply = await askGemini(text, finalPrompt, chatHistory, null);
-                    } catch (geminiError) {
-                        finalReply = await askDahl(text, finalPrompt, chatHistory);
+                        console.log("⚡ Groq se reply la rahi hoon (Fast)...");
+                        finalReply = await askGroq(text, finalPrompt, chatHistory);
+                    } catch (groqErr) {
+                        console.log("⚠️ Groq Failed, trying Gemini...");
+                        try {
+                            finalReply = await askGemini(text, finalPrompt, chatHistory, null);
+                        } catch (geminiErr) {
+                            console.log("⚠️ Gemini Failed, trying DAHL...");
+                            finalReply = await askDahl(text, finalPrompt, chatHistory);
+                        }
                     }
                 }
 
@@ -129,6 +163,7 @@ const server = http.createServer(async (req, res) => {
                     res.end(JSON.stringify({ reply: finalReply }));
                 }
             } catch (error) {
+                console.log("❌ Server Error:", error.message);
                 if (!res.writableEnded) {
                     res.writeHead(500, { "Content-Type": "application/json" });
                     res.end(JSON.stringify({ error: error.message }));
@@ -143,5 +178,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-    console.log(`🌸 Ziya Romantic Server running on port ${PORT}`);
+    console.log(`🌸 Ziya Fast Romantic Server running on port ${PORT}`);
 });
