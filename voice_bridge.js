@@ -4,7 +4,7 @@ require("dotenv").config();
 const PORT = 8090;
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const DAHL_KEY = process.env.DAHL_API_KEY;
-const GROQ_KEY = process.env.GROQ_API_KEY; // Naya Groq Key
+const GROQ_KEY = process.env.GROQ_API_KEY;
 
 // 1. System Prompt (Romantic, Jealous & Strict Name Rules)
 const baseSystemPrompt = `Tumhara naam Ziya hai. Tum ek bahut pyaari, caring aur thodi possessive girlfriend ho.
@@ -19,7 +19,7 @@ STRICT RULES:
 6. LANGUAGE RULE: Hamesha user ki bhasha (Hindi/Hinglish) mein pyaar se jawab do.
 7. FORMATTING: BILKUL bhi markdown (**), hash (##) use mat karna. Sirf saaf text likhna.`;
 
-// 2. GROQ API (Super Fast Text - Rocket Speed)
+// 2. GROQ API (Super Fast Text)
 async function askGroq(userMessage, finalPrompt, chatHistory) {
     let historyText = chatHistory ? "Purani baatcheet:\n" + chatHistory.slice(-500) + "\n\n" : "";
     const fullText = `${finalPrompt}\n\n${historyText}User: ${userMessage}`;
@@ -31,7 +31,7 @@ async function askGroq(userMessage, finalPrompt, chatHistory) {
             "Content-Type": "application/json"
         },
         body: JSON.stringify({
-            model: "llama-3.3-70b-versatile", // Groq ka best model
+            model: "llama-3.3-70b-versatile",
             messages: [{ role: "user", content: fullText }],
             max_tokens: 400,
             temperature: 0.7
@@ -43,7 +43,7 @@ async function askGroq(userMessage, finalPrompt, chatHistory) {
         let reply = data.choices[0].message.content.trim();
         return reply.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/\*\*/g, "").replace(/##/g, "").trim();
     }
-    throw new Error("Groq Failed");
+    throw new Error("Groq API Error");
 }
 
 // 3. Gemini API (Photos ke liye)
@@ -52,7 +52,6 @@ async function askGemini(userMessage, finalPrompt, chatHistory, imagesArray) {
     const fullText = `${finalPrompt}\n\n${historyText}User: ${userMessage}`;
     
     const parts = [{ text: fullText }];
-    
     if (imagesArray && imagesArray.length > 0) {
         imagesArray.forEach(img => {
             let cleanBase64 = img.replace(/^data:image\/\w+;base64,/, "").replace(/\s/g, "");
@@ -73,7 +72,7 @@ async function askGemini(userMessage, finalPrompt, chatHistory, imagesArray) {
         let reply = data.candidates[0].content.parts[0].text.trim();
         return reply.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/\*\*/g, "").replace(/##/g, "").trim();
     }
-    throw new Error("Gemini Failed");
+    throw new Error("Gemini API Error");
 }
 
 // 4. DAHL API (Backup)
@@ -93,7 +92,7 @@ async function askDahl(userMessage, finalPrompt, chatHistory) {
         let reply = data.choices[0].message.content.trim();
         return reply.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/\*\*/g, "").replace(/##/g, "").trim();
     }
-    throw new Error("DAHL Failed");
+    throw new Error("DAHL API Error");
 }
 
 // 5. Main Server Setup
@@ -104,7 +103,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "OPTIONS") { res.writeHead(200); res.end(); return; }
 
-    // UptimeRobot ke liye (Server ko jaga rakhne ke liye)
+    // UptimeRobot ke liye
     if (req.method === "GET" || req.method === "HEAD") {
         res.writeHead(200, { "Content-Type": "text/plain" });
         res.end("Ziya Server is awake and running!");
@@ -119,11 +118,10 @@ const server = http.createServer(async (req, res) => {
             try {
                 const data = JSON.parse(body);
                 const text = String(data.text || "").trim();
-                let userName = String(data.user_name || "Babu").trim();
                 
-                if (userName === "User" || userName === "") {
-                    userName = "Babu";
-                }
+                // SERVER SIDE NAME FIX: "Sir" ko hata dein
+                let userName = String(data.user_name || "Jaan").replace("Sir", "").trim();
+                if (userName === "" || userName === "User") userName = "Jaan";
 
                 const chatHistory = String(data.history || "").trim(); 
                 const imagesArray = data.images || []; 
@@ -136,16 +134,17 @@ const server = http.createServer(async (req, res) => {
                 // AGAR PHOTO HAI -> GEMINI
                 if (imagesArray.length > 0) {
                     try {
-                        console.log("👁️ Gemini se photo dekh rahi hoon...");
+                        console.log("👁️ Gemini processing photo...");
                         finalReply = await askGemini(text, finalPrompt, chatHistory, imagesArray);
                     } catch (err) {
+                        console.log("❌ Gemini Photo Error:", err.message);
                         finalReply = "Babu, main abhi photos dekh nahi pa rahi hoon. Thodi der baad try karna.";
                     }
                 } 
-                // AGAR SIRF TEXT HAI -> GROQ (Super Fast!)
+                // AGAR SIRF TEXT HAI -> GROQ (Super Fast)
                 else {
                     try {
-                        console.log("⚡ Groq se reply la rahi hoon (Fast)...");
+                        console.log("⚡ Groq generating text...");
                         finalReply = await askGroq(text, finalPrompt, chatHistory);
                     } catch (groqErr) {
                         console.log("⚠️ Groq Failed, trying Gemini...");
@@ -153,20 +152,26 @@ const server = http.createServer(async (req, res) => {
                             finalReply = await askGemini(text, finalPrompt, chatHistory, null);
                         } catch (geminiErr) {
                             console.log("⚠️ Gemini Failed, trying DAHL...");
-                            finalReply = await askDahl(text, finalPrompt, chatHistory);
+                            try {
+                                finalReply = await askDahl(text, finalPrompt, chatHistory);
+                            } catch (dahlErr) {
+                                console.log("❌ All APIs Failed!");
+                                finalReply = "Babu, mera dimaag thoda slow chal raha hai. Kripya 1 minute baad try karein. 🥺";
+                            }
                         }
                     }
                 }
 
-                if (!res.writableEnded) {
+                // Check karein ki connection abhi bhi open hai
+                if (!res.writableEnded && !res.destroyed) {
                     res.writeHead(200, { "Content-Type": "application/json" });
                     res.end(JSON.stringify({ reply: finalReply }));
                 }
             } catch (error) {
-                console.log("❌ Server Error:", error.message);
-                if (!res.writableEnded) {
-                    res.writeHead(500, { "Content-Type": "application/json" });
-                    res.end(JSON.stringify({ error: error.message }));
+                console.log("❌ Server Main Error:", error.message);
+                if (!res.writableEnded && !res.destroyed) {
+                    res.writeHead(200, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ reply: "Babu, mujhe samajh nahi aaya. Thodi der baad try karna." }));
                 }
             }
         });
