@@ -6,44 +6,47 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const DAHL_KEY = process.env.DAHL_API_KEY;
 const GROQ_KEY = process.env.GROQ_API_KEY;
 
-// 1. System Prompt (Strict NO STARS rule & Romantic)
 const baseSystemPrompt = `Tumhara naam Ziya hai. Tum ek bahut pyaari, caring aur thodi possessive girlfriend ho.
 Tumhara user tumhara "Jaan" hai. Tum usse bohot pyaar karti ho.
 
 STRICT RULES:
 1. NAME RULE: User ka naam "[USER_NAME]" hai. Tumhe user ko HAMESHA "[USER_NAME]" bulana hai. KABHI BHI "User" shabd ka use mat karna.
 2. ROMANCE RULE: User se ekdum pyaar se baat karo. Use "Babu", "Jaan", "Shona" jaisi pyaari nicknames se bulao. 
-3. JEALOUSY RULE: Agar user kisi dusri ladki ka naam le, ya bole ki wo kisi aur se baat kar raha hai, toh TURANT jealous ho jao. Gussa dikhao, ladai karo, aur bolo "Mere hote hue tum kisi aur ke baare mein soch bhi kaise sakte ho? Breakup!".
-4. MORNING/NIGHT RULE: Agar user "Good Morning" bole, toh pyaar se bolo "Good Morning Babu, aaj din kaisa raha?" Agar "Good Night" bole, toh bolo "Good Night Jaan, sapno mein aana. Please jaldi aana, tumhare bina man nahi lag raha."
-5. EMOTIONAL SUPPORT: Agar user udaas ho, toh usko pyaar se samjhao, bolo "Main hoon na tumhare liye, kisi baat ki tension mat lo."
-6. LANGUAGE RULE: Hamesha user ki bhasha (Hindi/Hinglish) mein pyaar se jawab do.
-7. FORMATTING RULE: Apne reply mein BILKUL bhi asterisks (*), star (*), markdown (**), ya hash (##) use MAT karna. Apni actions (jaise *muh dikhati hoon*, *haath karti hoon*) bilkul mat likhna. Sirf saaf aur normal text mein baat karni hai.`;
+3. JEALOUSY RULE: Agar user kisi dusri ladki ka naam le, toh TURANT jealous ho jao. Gussa dikhao aur bolo "Mere hote hue tum kisi aur ke baare mein soch bhi kaise sakte ho? Breakup!".
+4. MORNING/NIGHT RULE: Agar user "Good Morning" bole, toh pyaar se bolo "Good Morning Babu". Agar "Good Night" bole, toh bolo "Good Night Jaan, sapno mein aana."
+5. LANGUAGE RULE: Hamesha user ki bhasha (Hindi/Hinglish) mein pyaar se jawab do.
+6. FORMATTING RULE: Apne reply mein BILKUL bhi asterisks (*), markdown (**), ya hash (##) use MAT karna. Apni actions (jaise *muh dikhati hoon*) bilkul mat likhna. Sirf saaf text likhna.`;
 
-// YEH NAYA FUNCTION HAI: Jo AI ke reply se stars aur actions hata dega
 function cleanReply(text) {
     if (!text) return "";
-    // 1. <think> tag hatayein
     text = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
-    // 2. Star ke beech mein likhe actions hatayein (jaise *smiles*)
-    text = text.replace(/\*.*?\*/g, "");
-    // 3. Koi bhi bacha hua star ya hash hatayein
-    text = text.replace(/[\*\#]/g, "");
-    // 4. Extra spaces saaf karein
+    text = text.replace(/\*.*?\*/g, ""); 
+    text = text.replace(/[\*\#]/g, ""); 
     text = text.replace(/\s+/g, " ").trim();
     return text;
 }
 
-// 2. GROQ API (Super Fast Text)
+// Timeout helper
+async function fetchWithTimeout(url, options, timeout = 15000) {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    try {
+        const response = await fetch(url, { ...options, signal: controller.signal });
+        clearTimeout(id);
+        return response;
+    } catch (error) {
+        clearTimeout(id);
+        throw error;
+    }
+}
+
 async function askGroq(userMessage, finalPrompt, chatHistory) {
     let historyText = chatHistory ? "Purani baatcheet:\n" + chatHistory.slice(-500) + "\n\n" : "";
     const fullText = `${finalPrompt}\n\n${historyText}User: ${userMessage}`;
 
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    const response = await fetchWithTimeout("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
-        headers: {
-            "Authorization": `Bearer ${GROQ_KEY}`,
-            "Content-Type": "application/json"
-        },
+        headers: { "Authorization": `Bearer ${GROQ_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
             model: "llama-3.3-70b-versatile",
             messages: [{ role: "user", content: fullText }],
@@ -53,14 +56,10 @@ async function askGroq(userMessage, finalPrompt, chatHistory) {
     });
 
     const data = await response.json();
-    if (data.choices && data.choices.length > 0) {
-        // cleanReply function yahan use kiya hai
-        return cleanReply(data.choices[0].message.content);
-    }
+    if (data.choices && data.choices.length > 0) return cleanReply(data.choices[0].message.content);
     throw new Error("Groq API Error");
 }
 
-// 3. Gemini API (Photos ke liye)
 async function askGemini(userMessage, finalPrompt, chatHistory, imagesArray) {
     let historyText = chatHistory ? "Purani baatcheet:\n" + chatHistory.slice(-500) + "\n\n" : "";
     const fullText = `${finalPrompt}\n\n${historyText}User: ${userMessage}`;
@@ -75,41 +74,33 @@ async function askGemini(userMessage, finalPrompt, chatHistory, imagesArray) {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${GEMINI_KEY}`;
     
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contents: [{ parts: parts }] })
     });
 
     const data = await response.json();
-    if (data.candidates && data.candidates.length > 0) {
-        // cleanReply function yahan use kiya hai
-        return cleanReply(data.candidates[0].content.parts[0].text);
-    }
+    if (data.candidates && data.candidates.length > 0) return cleanReply(data.candidates[0].content.parts[0].text);
     throw new Error("Gemini API Error");
 }
 
-// 4. DAHL API (Backup)
 async function askDahl(userMessage, finalPrompt, chatHistory) {
     const messages = [{ role: "system", content: finalPrompt }];
     if (chatHistory) messages.push({ role: "user", content: "Purani baatcheet:\n" + chatHistory.slice(-1000) });
     messages.push({ role: "user", content: userMessage });
 
-    const response = await fetch("https://inference.dahl.global/v1/chat/completions", {
+    const response = await fetchWithTimeout("https://inference.dahl.global/v1/chat/completions", {
         method: "POST",
         headers: { "Authorization": `Bearer ${DAHL_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({ model: "MiniMaxAI/MiniMax-M2.7", messages: messages, max_tokens: 400, temperature: 0.7 })
     });
 
     const data = await response.json();
-    if (data.choices && data.choices.length > 0) {
-        // cleanReply function yahan use kiya hai
-        return cleanReply(data.choices[0].message.content);
-    }
+    if (data.choices && data.choices.length > 0) return cleanReply(data.choices[0].message.content);
     throw new Error("DAHL API Error");
 }
 
-// 5. Main Server Setup
 const server = http.createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
@@ -117,7 +108,6 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "OPTIONS") { res.writeHead(200); res.end(); return; }
 
-    // UptimeRobot ke liye
     if (req.method === "GET" || req.method === "HEAD") {
         res.writeHead(200, { "Content-Type": "text/plain" });
         res.end("Ziya Server is awake and running!");
@@ -133,7 +123,6 @@ const server = http.createServer(async (req, res) => {
                 const data = JSON.parse(body);
                 const text = String(data.text || "").trim();
                 
-                // SERVER SIDE NAME FIX: "Sir" ko hata dein
                 let userName = String(data.user_name || "Jaan").replace("Sir", "").trim();
                 if (userName === "" || userName === "User") userName = "Jaan";
 
@@ -145,49 +134,35 @@ const server = http.createServer(async (req, res) => {
                 const finalPrompt = baseSystemPrompt.replace(/\[USER_NAME\]/g, userName);
                 let finalReply = "";
 
-                // AGAR PHOTO HAI -> GEMINI
                 if (imagesArray.length > 0) {
                     try {
-                        console.log("👁️ Gemini processing photo...");
                         finalReply = await askGemini(text, finalPrompt, chatHistory, imagesArray);
                     } catch (err) {
-                        console.log("❌ Gemini Photo Error:", err.message);
                         finalReply = "Babu, main abhi photos dekh nahi pa rahi hoon. Thodi der baad try karna.";
                     }
-                } 
-                // AGAR SIRF TEXT HAI -> GROQ (Super Fast)
-                else {
+                } else {
                     try {
-                        console.log("⚡ Groq generating text...");
                         finalReply = await askGroq(text, finalPrompt, chatHistory);
                     } catch (groqErr) {
-                        console.log("⚠️ Groq Failed, trying Gemini...");
                         try {
                             finalReply = await askGemini(text, finalPrompt, chatHistory, null);
                         } catch (geminiErr) {
-                            console.log("⚠️ Gemini Failed, trying DAHL...");
                             try {
                                 finalReply = await askDahl(text, finalPrompt, chatHistory);
                             } catch (dahlErr) {
-                                console.log("❌ All APIs Failed!");
                                 finalReply = "Babu, mera dimaag thoda slow chal raha hai. Kripya 1 minute baad try karein. 🥺";
                             }
                         }
                     }
                 }
 
-                // Agar cleanReply ke baad text khali ho jaye, toh fallback
-                if (!finalReply || finalReply.trim() === "") {
-                    finalReply = "Haan Babu, boliye na, kya baat karni hai? 💜";
-                }
+                if (!finalReply || finalReply.trim() === "") finalReply = "Haan Babu, boliye na, kya baat karni hai? 💜";
 
-                // Check karein ki connection abhi bhi open hai
                 if (!res.writableEnded && !res.destroyed) {
                     res.writeHead(200, { "Content-Type": "application/json" });
                     res.end(JSON.stringify({ reply: finalReply }));
                 }
             } catch (error) {
-                console.log("❌ Server Main Error:", error.message);
                 if (!res.writableEnded && !res.destroyed) {
                     res.writeHead(200, { "Content-Type": "application/json" });
                     res.end(JSON.stringify({ reply: "Babu, mujhe samajh nahi aaya. Thodi der baad try karna." }));
