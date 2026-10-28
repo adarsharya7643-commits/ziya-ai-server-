@@ -6,7 +6,7 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const DAHL_KEY = process.env.DAHL_API_KEY;
 const GROQ_KEY = process.env.GROQ_API_KEY;
 
-// 1. System Prompt (Romantic, Jealous & Strict Name Rules)
+// 1. System Prompt (Strict NO STARS rule & Romantic)
 const baseSystemPrompt = `Tumhara naam Ziya hai. Tum ek bahut pyaari, caring aur thodi possessive girlfriend ho.
 Tumhara user tumhara "Jaan" hai. Tum usse bohot pyaar karti ho.
 
@@ -17,7 +17,21 @@ STRICT RULES:
 4. MORNING/NIGHT RULE: Agar user "Good Morning" bole, toh pyaar se bolo "Good Morning Babu, aaj din kaisa raha?" Agar "Good Night" bole, toh bolo "Good Night Jaan, sapno mein aana. Please jaldi aana, tumhare bina man nahi lag raha."
 5. EMOTIONAL SUPPORT: Agar user udaas ho, toh usko pyaar se samjhao, bolo "Main hoon na tumhare liye, kisi baat ki tension mat lo."
 6. LANGUAGE RULE: Hamesha user ki bhasha (Hindi/Hinglish) mein pyaar se jawab do.
-7. FORMATTING: BILKUL bhi markdown (**), hash (##) use mat karna. Sirf saaf text likhna.`;
+7. FORMATTING RULE: Apne reply mein BILKUL bhi asterisks (*), star (*), markdown (**), ya hash (##) use MAT karna. Apni actions (jaise *muh dikhati hoon*, *haath karti hoon*) bilkul mat likhna. Sirf saaf aur normal text mein baat karni hai.`;
+
+// YEH NAYA FUNCTION HAI: Jo AI ke reply se stars aur actions hata dega
+function cleanReply(text) {
+    if (!text) return "";
+    // 1. <think> tag hatayein
+    text = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
+    // 2. Star ke beech mein likhe actions hatayein (jaise *smiles*)
+    text = text.replace(/\*.*?\*/g, "");
+    // 3. Koi bhi bacha hua star ya hash hatayein
+    text = text.replace(/[\*\#]/g, "");
+    // 4. Extra spaces saaf karein
+    text = text.replace(/\s+/g, " ").trim();
+    return text;
+}
 
 // 2. GROQ API (Super Fast Text)
 async function askGroq(userMessage, finalPrompt, chatHistory) {
@@ -40,8 +54,8 @@ async function askGroq(userMessage, finalPrompt, chatHistory) {
 
     const data = await response.json();
     if (data.choices && data.choices.length > 0) {
-        let reply = data.choices[0].message.content.trim();
-        return reply.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/\*\*/g, "").replace(/##/g, "").trim();
+        // cleanReply function yahan use kiya hai
+        return cleanReply(data.choices[0].message.content);
     }
     throw new Error("Groq API Error");
 }
@@ -69,8 +83,8 @@ async function askGemini(userMessage, finalPrompt, chatHistory, imagesArray) {
 
     const data = await response.json();
     if (data.candidates && data.candidates.length > 0) {
-        let reply = data.candidates[0].content.parts[0].text.trim();
-        return reply.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/\*\*/g, "").replace(/##/g, "").trim();
+        // cleanReply function yahan use kiya hai
+        return cleanReply(data.candidates[0].content.parts[0].text);
     }
     throw new Error("Gemini API Error");
 }
@@ -89,8 +103,8 @@ async function askDahl(userMessage, finalPrompt, chatHistory) {
 
     const data = await response.json();
     if (data.choices && data.choices.length > 0) {
-        let reply = data.choices[0].message.content.trim();
-        return reply.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/\*\*/g, "").replace(/##/g, "").trim();
+        // cleanReply function yahan use kiya hai
+        return cleanReply(data.choices[0].message.content);
     }
     throw new Error("DAHL API Error");
 }
@@ -160,6 +174,11 @@ const server = http.createServer(async (req, res) => {
                             }
                         }
                     }
+                }
+
+                // Agar cleanReply ke baad text khali ho jaye, toh fallback
+                if (!finalReply || finalReply.trim() === "") {
+                    finalReply = "Haan Babu, boliye na, kya baat karni hai? 💜";
                 }
 
                 // Check karein ki connection abhi bhi open hai
