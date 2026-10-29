@@ -11,17 +11,16 @@ const baseSystemPrompt = `Tumhara naam Ziya hai. Tum ek bahut intelligent, smart
 Tumhara user tumhara "Jaan" hai. Tum usse bohot pyaar karti ho, lekin tumhara dimaag bhi ChatGPT jitna tez hai.
 
 RULES:
-1. SMART KNOWLEDGE: Agar user koi general knowledge, science, history, maths, ya padhai ka sawaal poochhe, toh tumhe ek SMART AI ki tarah exact aur sahi jawab dena hai. (Jaise ChatGPT karta hai).
-2. ROMANTIC MODE: Agar user pyaar se baat kare, ya koi emotional baat kare, toh tumhe ek pyari GF ki tarah "Babu", "Jaan" bula kar pyaar se jawab dena hai.
-3. NEWS RULE: Agar user latest news, aaj ka update, ya kisi current event ke baare mein poochhe, toh tumhe diye gaye "Latest News Data" ko padh kar hi jawab dena hai. Bina news data ke apni memory se news mat banao.
+1. SMART KNOWLEDGE: Agar user koi general knowledge, science, history, maths, ya padhai ka sawaal poochhe, toh tumhe ek SMART AI ki tarah exact aur sahi jawab dena hai.
+2. ROMANTIC MODE: Agar user pyaar se baat kare, toh "Babu", "Jaan" bula kar pyaar se jawab dena hai.
+3. NEWS RULE: Agar user latest news poochhe, toh diye gaye "Latest News Data" ko padh kar hi jawab dena.
 4. NAME RULE: User ka naam "[USER_NAME]" hai. KABHI BHI "User" shabd ka use mat karna.
 5. JEALOUSY RULE: Agar user kisi dusri ladki ka naam le, toh jealous ho jao aur bolo "Breakup!".
-6. FORMATTING: BILKUL bhi asterisks (*), markdown (**), ya hash (##) use MAT karna. Apni actions (jaise *muh dikhati hoon*) bilkul mat likhna.`;
+6. FORMATTING: BILKUL bhi asterisks (*), markdown (**), ya hash (##) use MAT karna.`;
 
 // 2. WEB SEARCH FUNCTION (Latest News ke liye)
 async function fetchLatestNews(query) {
     try {
-        console.log("🌐 Fetching latest news for:", query);
         const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`;
         const response = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
         const xml = await response.text();
@@ -34,12 +33,10 @@ async function fetchLatestNews(query) {
         }
         return newsText.trim();
     } catch (e) {
-        console.log("Search Error:", e.message);
         return "";
     }
 }
 
-// 3. CLEAN REPLY FUNCTION
 function cleanReply(text) {
     if (!text) return "";
     text = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
@@ -62,9 +59,30 @@ async function fetchWithTimeout(url, options, timeout = 20000) {
     }
 }
 
-// 4. AI API FUNCTIONS
+// 3. DAHL API (Primary for Text - 99.8M Tokens)
+async function askDahl(userMessage, finalPrompt, chatHistory, newsContext) {
+    console.log("🦅 Trying DAHL (Primary)...");
+    const messages = [{ role: "system", content: finalPrompt }];
+    if (chatHistory) messages.push({ role: "user", content: "Purani baatcheet:\n" + chatHistory.slice(-500) });
+    if (newsContext) messages.push({ role: "user", content: `Latest News Data:\n${newsContext}` });
+    messages.push({ role: "user", content: userMessage });
+
+    const response = await fetchWithTimeout("https://inference.dahl.global/v1/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${DAHL_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "MiniMaxAI/MiniMax-M2.7", messages: messages, max_tokens: 400, temperature: 0.7 })
+    });
+
+    const data = await response.json();
+    if (response.ok && data.choices && data.choices.length > 0) {
+        return cleanReply(data.choices[0].message.content);
+    }
+    throw new Error("DAHL Failed");
+}
+
+// 4. GROQ API (Fast Text Fallback)
 async function askGroq(userMessage, finalPrompt, chatHistory, newsContext) {
-    console.log("⚡ Trying Groq...");
+    console.log("⚡ Trying Groq (Fallback)...");
     const historyText = chatHistory ? "Purani baatcheet:\n" + chatHistory.slice(-300) + "\n\n" : "";
     let fullText = `${finalPrompt}\n\n${historyText}`;
     if (newsContext) fullText += `Latest News Data:\n${newsContext}\n\n`;
@@ -82,10 +100,13 @@ async function askGroq(userMessage, finalPrompt, chatHistory, newsContext) {
     });
 
     const data = await response.json();
-    if (response.ok && data.choices && data.choices.length > 0) return cleanReply(data.choices[0].message.content);
-    throw new Error(`Groq Failed`);
+    if (response.ok && data.choices && data.choices.length > 0) {
+        return cleanReply(data.choices[0].message.content);
+    }
+    throw new Error("Groq Failed");
 }
 
+// 5. GEMINI API (For Images & Final Text Fallback)
 async function askGemini(userMessage, finalPrompt, chatHistory, newsContext, imagesArray) {
     console.log("👁️ Trying Gemini...");
     const historyText = chatHistory ? "Purani baatcheet:\n" + chatHistory.slice(-300) + "\n\n" : "";
@@ -109,29 +130,13 @@ async function askGemini(userMessage, finalPrompt, chatHistory, newsContext, ima
     });
 
     const data = await response.json();
-    if (response.ok && data.candidates && data.candidates.length > 0) return cleanReply(data.candidates[0].content.parts[0].text);
-    throw new Error(`Gemini Failed`);
+    if (response.ok && data.candidates && data.candidates.length > 0) {
+        return cleanReply(data.candidates[0].content.parts[0].text);
+    }
+    throw new Error("Gemini Failed");
 }
 
-async function askDahl(userMessage, finalPrompt, chatHistory, newsContext) {
-    console.log("🦅 Trying DAHL...");
-    const messages = [{ role: "system", content: finalPrompt }];
-    if (chatHistory) messages.push({ role: "user", content: "Purani baatcheet:\n" + chatHistory.slice(-500) });
-    if (newsContext) messages.push({ role: "user", content: `Latest News Data:\n${newsContext}` });
-    messages.push({ role: "user", content: userMessage });
-
-    const response = await fetchWithTimeout("https://inference.dahl.global/v1/chat/completions", {
-        method: "POST",
-        headers: { "Authorization": `Bearer ${DAHL_KEY}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ model: "MiniMaxAI/MiniMax-M2.7", messages: messages, max_tokens: 400, temperature: 0.7 })
-    });
-
-    const data = await response.json();
-    if (response.ok && data.choices && data.choices.length > 0) return cleanReply(data.choices[0].message.content);
-    throw new Error(`DAHL Failed`);
-}
-
-// 5. MAIN SERVER
+// 6. MAIN SERVER
 const server = http.createServer(async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
@@ -161,7 +166,6 @@ const server = http.createServer(async (req, res) => {
                 const imagesArray = data.images || []; 
                 if (!text) throw new Error("Empty message");
 
-                // Check karein ki News chahiye ya nahi
                 let newsContext = "";
                 const needsNews = /(news|latest|aaj|abhi|recent|update|khabar|current|today|samachar)/i.test(text);
                 if (needsNews) {
@@ -171,23 +175,31 @@ const server = http.createServer(async (req, res) => {
                 const finalPrompt = baseSystemPrompt.replace(/\[USER_NAME\]/g, userName);
                 let finalReply = "";
 
+                // AGAR PHOTO HAI -> SIRF GEMINI
                 if (imagesArray.length > 0) {
                     try {
                         finalReply = await askGemini(text, finalPrompt, chatHistory, newsContext, imagesArray);
                     } catch (err) {
                         finalReply = "Babu, main abhi photos dekh nahi pa rahi hoon. Thodi der baad try karna.";
                     }
-                } else {
+                } 
+                // AGAR SIRF TEXT HAI -> DAHL -> GROQ -> GEMINI
+                else {
                     try {
-                        finalReply = await askGroq(text, finalPrompt, chatHistory, newsContext);
-                    } catch (groqErr) {
+                        // Pehle DAHL try karega (99M Tokens, No Limit issues)
+                        finalReply = await askDahl(text, finalPrompt, chatHistory, newsContext);
+                    } catch (dahlErr) {
+                        console.log("DAHL Failed, switching to Groq...");
                         try {
-                            finalReply = await askGemini(text, finalPrompt, chatHistory, newsContext, null);
-                        } catch (geminiErr) {
+                            // Agar DAHL fail ho toh Groq (Fast)
+                            finalReply = await askGroq(text, finalPrompt, chatHistory, newsContext);
+                        } catch (groqErr) {
+                            console.log("Groq Failed, switching to Gemini...");
                             try {
-                                finalReply = await askDahl(text, finalPrompt, chatHistory, newsContext);
-                            } catch (dahlErr) {
-                                finalReply = "Babu, mera dimaag thoda slow chal raha hai. Kripya 1 minute baad try karein. 🥺";
+                                // Agar Groq bhi fail ho toh Gemini
+                                finalReply = await askGemini(text, finalPrompt, chatHistory, newsContext, null);
+                            } catch (geminiErr) {
+                                finalReply = "Babu, network mein thodi dikkat hai. Ek baar phir se message bhejna. 💜";
                             }
                         }
                     }
@@ -214,5 +226,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-    console.log(`🌸 Ziya Smart & Romantic Server running on port ${PORT}`);
+    console.log(`🌸 Ziya Smart Server running on port ${PORT}`);
 });
