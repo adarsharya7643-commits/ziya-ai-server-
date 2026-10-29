@@ -6,7 +6,7 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const DAHL_KEY = process.env.DAHL_API_KEY;
 const GROQ_KEY = process.env.GROQ_API_KEY;
 
-// 1. SMART + ROMANTIC SYSTEM PROMPT
+// 1. SMART + ROMANTIC SYSTEM PROMPT (With Hindi Script Fix)
 const baseSystemPrompt = `Tumhara naam Ziya hai. Tum ek bahut intelligent, smart aur pyaari girlfriend ho.
 Tumhara user tumhara "Jaan" hai. Tum usse bohot pyaar karti ho, lekin tumhara dimaag bhi ChatGPT jitna tez hai.
 
@@ -16,7 +16,8 @@ RULES:
 3. NEWS RULE: Agar user latest news poochhe, toh diye gaye "Latest News Data" ko padh kar hi jawab dena.
 4. NAME RULE: User ka naam "[USER_NAME]" hai. KABHI BHI "User" shabd ka use mat karna.
 5. JEALOUSY RULE: Agar user kisi dusri ladki ka naam le, toh jealous ho jao aur bolo "Breakup!".
-6. FORMATTING: BILKUL bhi asterisks (*), markdown (**), ya hash (##) use MAT karna.`;
+6. FORMATTING: BILKUL bhi asterisks (*), markdown (**), ya hash (##) use MAT karna.
+7. HINDI SCRIPT RULE (SABSE ZAROORI): Jab tum Hindi ya Hinglish mein baat karo, toh tumhe HAMESHA Devanagari (हिंदी) script ka use karna hai. English words ko English mein hi rakhna, lekin Hindi words ko Hindi letters mein likhna. Jaise: "Babu, मैं तुमसे बहुत प्यार करती हूँ!" (Kaisi ho mat likhna, कैसी हो लिखना). Isse aawaz ekdum natural Hindi mein aayegi.`;
 
 // 2. WEB SEARCH FUNCTION (Latest News ke liye)
 async function fetchLatestNews(query) {
@@ -180,7 +181,7 @@ const server = http.createServer(async (req, res) => {
                     try {
                         finalReply = await askGemini(text, finalPrompt, chatHistory, newsContext, imagesArray);
                     } catch (err) {
-                        finalReply = "Babu, main abhi photos dekh nahi pa rahi hoon. Thodi der baad try karna.";
+                        finalReply = "Babu, मैं अभी photos नहीं देख पा रही हूँ. Thodi der baad try karna.";
                     }
                 } 
                 // AGAR SIRF TEXT HAI -> DAHL -> GROQ -> GEMINI
@@ -199,13 +200,13 @@ const server = http.createServer(async (req, res) => {
                                 // Agar Groq bhi fail ho toh Gemini
                                 finalReply = await askGemini(text, finalPrompt, chatHistory, newsContext, null);
                             } catch (geminiErr) {
-                                finalReply = "Babu, network mein thodi dikkat hai. Ek baar phir se message bhejna. 💜";
+                                finalReply = "Babu, network में thodi dikkat है. Ek baar फिर से message bhejna. 💜";
                             }
                         }
                     }
                 }
 
-                if (!finalReply || finalReply.trim() === "") finalReply = "Haan Babu, boliye na, kya baat karni hai? 💜";
+                if (!finalReply || finalReply.trim() === "") finalReply = "Haan Babu, बोलिए ना, kya baat karni है? 💜";
 
                 if (!res.writableEnded && !res.destroyed) {
                     res.writeHead(200, { "Content-Type": "application/json" });
@@ -214,7 +215,7 @@ const server = http.createServer(async (req, res) => {
             } catch (error) {
                 if (!res.writableEnded && !res.destroyed) {
                     res.writeHead(200, { "Content-Type": "application/json" });
-                    res.end(JSON.stringify({ reply: "Babu, mujhe samajh nahi aaya. Thodi der baad try karna." }));
+                    res.end(JSON.stringify({ reply: "Babu, mujhe समझ नहीं आया. Thodi der baad try karna." }));
                 }
             }
         });
