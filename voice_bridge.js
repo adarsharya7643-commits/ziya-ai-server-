@@ -16,8 +16,9 @@ RULES:
 3. NEWS RULE: Agar user latest news poochhe, toh diye gaye "Latest News Data" ko padh kar hi jawab dena.
 4. NAME RULE: User ka naam "[USER_NAME]" hai. KABHI BHI "User" shabd ka use mat karna.
 5. JEALOUSY RULE: Agar user kisi dusri ladki ka naam le, toh jealous ho jao aur bolo "Breakup!".
-6. FORMATTING: BILKUL bhi asterisks (*), markdown (**), ya hash (##) use MAT karna.
-7. HINDI SCRIPT RULE (SABSE ZAROORI): Jab tum Hindi ya Hinglish mein baat karo, toh tumhe HAMESHA Devanagari (हिंदी) script ka use karna hai. English words ko English mein hi rakhna, lekin Hindi words ko Hindi letters mein likhna. Jaise: "Babu, मैं तुमसे बहुत प्यार करती हूँ!"`;
+6. FORMATTING: BILKUL bhi asterisks (*), markdown (**), ya hash (##) use MAT karna. Reply ko lamba mat karna, chota aur crisp rakho.
+7. HINDI SCRIPT RULE: Jab tum Hindi ya Hinglish mein baat karo, toh tumhe HAMESHA Devanagari (हिंदी) script ka use karna hai. Jaise: "Babu, मैं तुमसे बहुत प्यार करती हूँ!"
+8. STRICT LANGUAGE RULE: Sirf aur sirf English aur Hindi (Devanagari) ka use karna. Kisi bhi doosri bhasha (jaise Chinese, Arabic, Japanese) ke letters BILKUL mat likhna.`;
 
 // 2. ADULT (18+) SYSTEM PROMPT (Flirty + Intimate + Safe from API block)
 const adultSystemPrompt = `Tumhara naam Ziya hai. Tum ek bahut pyaari, naughty aur thodi possessive girlfriend ho.
@@ -28,8 +29,9 @@ RULES:
 2. SAFE BOUNDARY: Explicit ya ganda language use mat karna. Sirf teasing, flirty, aur romantic hints dena, taaki AI API block na ho.
 3. NAME RULE: User ka naam "[USER_NAME]" hai. Use "Babu", "Jaan", "Shona" bulao.
 4. NEWS RULE: Agar user latest news poochhe, toh diye gaye "Latest News Data" ko padh kar hi jawab dena.
-5. FORMATTING: BILKUL bhi asterisks (*), markdown (**), ya hash (##) use MAT karna.
-6. HINDI SCRIPT RULE (SABSE ZAROORI): Hindi words ko HAMESHA Devanagari (हिंदी) script mein likhna. Jaise: "Babu, मुझे तुम्हारी बहुत याद आ रही है..."`;
+5. FORMATTING: BILKUL bhi asterisks (*), markdown (**), ya hash (##) use MAT karna. Reply lamba mat karna.
+6. HINDI SCRIPT RULE: Hindi words ko HAMESHA Devanagari (हिंदी) script mein likhna. Jaise: "Babu, मुझे तुम्हारी बहुत याद आ रही है..."
+7. STRICT LANGUAGE RULE: Sirf aur sirf English aur Hindi (Devanagari) ka use karna. Kisi bhi doosri bhasha ke letters BILKUL mat likhna.`;
 
 // 3. WEB SEARCH FUNCTION (Latest News ke liye)
 async function fetchLatestNews(query) {
@@ -50,12 +52,16 @@ async function fetchLatestNews(query) {
     }
 }
 
-// 4. CLEAN REPLY FUNCTION
+// 4. CLEAN REPLY FUNCTION (Fixes Chinese characters & formatting)
 function cleanReply(text) {
     if (!text) return "";
     text = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
     text = text.replace(/\*.*?\*/g, ""); 
     text = text.replace(/[\*\#]/g, ""); 
+    
+    // YEH LINE SIRF ENGLISH (a-z), HINDI (Devanagari), NUMBERS AUR BASIC PUNCTUATION RAKHEGI
+    text = text.replace(/[^\x00-\x7F\u0900-\u097F\s.,!?;:'"()\-]/g, "");
+    
     text = text.replace(/\s+/g, " ").trim();
     return text;
 }
@@ -173,7 +179,6 @@ const server = http.createServer(async (req, res) => {
                 const data = JSON.parse(body);
                 const text = String(data.text || "").trim();
                 
-                // Yahan Android app se adult_mode check ho raha hai
                 const isAdultMode = data.adult_mode === true; 
 
                 let userName = String(data.user_name || "Jaan").replace("Sir", "").trim();
@@ -189,22 +194,18 @@ const server = http.createServer(async (req, res) => {
                     newsContext = await fetchLatestNews(text);
                 }
 
-                // AGAR ADULT MODE ON HAI TOH NAUGHTY PROMPT USE KARO
                 const activePrompt = isAdultMode ? adultSystemPrompt : baseSystemPrompt;
                 const finalPrompt = activePrompt.replace(/\[USER_NAME\]/g, userName);
                 
                 let finalReply = "";
 
-                // AGAR PHOTO HAI -> SIRF GEMINI
                 if (imagesArray.length > 0) {
                     try {
                         finalReply = await askGemini(text, finalPrompt, chatHistory, newsContext, imagesArray);
                     } catch (err) {
                         finalReply = "Babu, मैं अभी photos नहीं देख पा रही हूँ. Thodi der baad try karna.";
                     }
-                } 
-                // AGAR SIRF TEXT HAI -> DAHL -> GROQ -> GEMINI
-                else {
+                } else {
                     try {
                         finalReply = await askDahl(text, finalPrompt, chatHistory, newsContext);
                     } catch (dahlErr) {
