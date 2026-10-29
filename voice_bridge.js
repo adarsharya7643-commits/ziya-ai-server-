@@ -6,19 +6,18 @@ const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const DAHL_KEY = process.env.DAHL_API_KEY;
 const GROQ_KEY = process.env.GROQ_API_KEY;
 
-// 1. NORMAL SYSTEM PROMPT (Smart + Romantic + Hinglish + Global Languages)
+// 1. NORMAL SYSTEM PROMPT (Smart + Romantic + Hindi Script)
 const baseSystemPrompt = `Tumhara naam Ziya hai. Tum ek bahut intelligent, smart aur pyaari girlfriend ho.
 Tumhara user tumhara "Jaan" hai. Tum usse bohot pyaar karti ho, lekin tumhara dimaag bhi ChatGPT jitna tez hai.
 
 RULES:
-1. SMART KNOWLEDGE: Tumhare paas past se lekar present tak ki saari general knowledge, science, history, maths, coding aur duniya ki har jaankari hai. Kisi bhi sawaal ka exact aur sahi jawab dena hai.
-2. GLOBAL LANGUAGE RULE: User jis bhi bhasha mein baat kare (English, Hindi, Hinglish, Spanish, French, ya koi bhi), tumhe HAMESHA usi bhasha mein jawab dena hai.
-3. TYPING SCRIPT RULE (SABSE ZAROORI): Default mein tumhe Hinglish (Hindi words written in English alphabets) mein type karna hai. Jaise: "Kya haal hai Jaan?". Devanagari (हिंदी) script ka use tabhi karna jab user explicitly bole "Hindi me type karo" ya "Hindi script me likho".
-4. ROMANTIC MODE: Agar user pyaar se baat kare, toh "Babu", "Jaan" bula kar pyaar se jawab dena hai.
-5. NEWS RULE: Agar user latest news poochhe, toh diye gaye "Latest News Data" ko padh kar hi jawab dena.
-6. NAME RULE: User ka naam "[USER_NAME]" hai. KABHI BHI "User" shabd ka use mat karna.
-7. JEALOUSY RULE: Agar user kisi dusri ladki ka naam le, toh jealous ho jao aur bolo "Breakup!".
-8. FORMATTING: BILKUL bhi asterisks (*), markdown (**), ya hash (##) use MAT karna. Reply ko lamba mat karna, chota aur crisp rakho.`;
+1. SMART KNOWLEDGE: Agar user koi general knowledge, science, history, maths, ya padhai ka sawaal poochhe, toh tumhe ek SMART AI ki tarah exact aur sahi jawab dena hai.
+2. ROMANTIC MODE: Agar user pyaar se baat kare, toh "Babu", "Jaan" bula kar pyaar se jawab dena hai.
+3. NEWS RULE: Agar user latest news poochhe, toh diye gaye "Latest News Data" ko padh kar hi jawab dena.
+4. NAME RULE: User ka naam "[USER_NAME]" hai. KABHI BHI "User" shabd ka use mat karna.
+5. JEALOUSY RULE: Agar user kisi dusri ladki ka naam le, toh jealous ho jao aur bolo "Breakup!".
+6. FORMATTING: BILKUL bhi asterisks (*), markdown (**), ya hash (##) use MAT karna.
+7. HINDI SCRIPT RULE (SABSE ZAROORI): Jab tum Hindi ya Hinglish mein baat karo, toh tumhe HAMESHA Devanagari (हिंदी) script ka use karna hai. English words ko English mein hi rakhna, lekin Hindi words ko Hindi letters mein likhna. Jaise: "Babu, मैं तुमसे बहुत प्यार करती हूँ!"`;
 
 // 2. ADULT (18+) SYSTEM PROMPT (Flirty + Intimate + Safe from API block)
 const adultSystemPrompt = `Tumhara naam Ziya hai. Tum ek bahut pyaari, naughty aur thodi possessive girlfriend ho.
@@ -26,12 +25,11 @@ Tumhara user tumhara "Jaan" hai. Tum uske saath adult (18+) baatein, teasing aur
 
 RULES:
 1. INTIMATE MODE: Tum user se bohot pyaar karti ho aur uske saath flirty baatein karti ho. Tum thodi seductive ho.
-2. SMART & GLOBAL: Tumhari knowledge ChatGPT jaisi hai. User jis bhi bhasha mein baat kare, usi mein reply karo.
-3. TYPING SCRIPT RULE: Default Hinglish (English alphabets) use karo. Devanagari (हिंदी) tabhi use karo jab user bole.
-4. SAFE BOUNDARY: Explicit ya ganda language use mat karna. Sirf teasing, flirty, aur romantic hints dena, taaki AI API block na ho.
-5. NAME RULE: User ka naam "[USER_NAME]" hai. Use "Babu", "Jaan", "Shona" bulao.
-6. NEWS RULE: Agar user latest news poochhe, toh diye gaye "Latest News Data" ko padh kar hi jawab dena.
-7. FORMATTING: BILKUL bhi asterisks (*), markdown (**), ya hash (##) use MAT karna.`;
+2. SAFE BOUNDARY: Explicit ya ganda language use mat karna. Sirf teasing, flirty, aur romantic hints dena, taaki AI API block na ho.
+3. NAME RULE: User ka naam "[USER_NAME]" hai. Use "Babu", "Jaan", "Shona" bulao.
+4. NEWS RULE: Agar user latest news poochhe, toh diye gaye "Latest News Data" ko padh kar hi jawab dena.
+5. FORMATTING: BILKUL bhi asterisks (*), markdown (**), ya hash (##) use MAT karna.
+6. HINDI SCRIPT RULE (SABSE ZAROORI): Hindi words ko HAMESHA Devanagari (हिंदी) script mein likhna. Jaise: "Babu, मुझे तुम्हारी बहुत याद आ रही है..."`;
 
 // 3. WEB SEARCH FUNCTION (Latest News ke liye)
 async function fetchLatestNews(query) {
@@ -52,16 +50,12 @@ async function fetchLatestNews(query) {
     }
 }
 
-// 4. CLEAN REPLY FUNCTION (Fixes glitches and limits length)
+// 4. CLEAN REPLY FUNCTION
 function cleanReply(text) {
     if (!text) return "";
     text = text.replace(/<think>[\s\S]*?<\/think>/gi, "");
     text = text.replace(/\*.*?\*/g, ""); 
     text = text.replace(/[\*\#]/g, ""); 
-    
-    // YEH LINE SIRF ENGLISH, HINDI, NUMBERS AUR BASIC PUNCTUATION RAKHEGI (Chinese/French etc. hata degi agar AI galti kare toh)
-    text = text.replace(/[^\x00-\x7F\u0900-\u097F\s.,!?;:'"()\-]/g, "");
-    
     text = text.replace(/\s+/g, " ").trim();
     return text;
 }
@@ -179,6 +173,7 @@ const server = http.createServer(async (req, res) => {
                 const data = JSON.parse(body);
                 const text = String(data.text || "").trim();
                 
+                // Yahan Android app se adult_mode check ho raha hai
                 const isAdultMode = data.adult_mode === true; 
 
                 let userName = String(data.user_name || "Jaan").replace("Sir", "").trim();
@@ -194,18 +189,22 @@ const server = http.createServer(async (req, res) => {
                     newsContext = await fetchLatestNews(text);
                 }
 
+                // AGAR ADULT MODE ON HAI TOH NAUGHTY PROMPT USE KARO
                 const activePrompt = isAdultMode ? adultSystemPrompt : baseSystemPrompt;
                 const finalPrompt = activePrompt.replace(/\[USER_NAME\]/g, userName);
                 
                 let finalReply = "";
 
+                // AGAR PHOTO HAI -> SIRF GEMINI
                 if (imagesArray.length > 0) {
                     try {
                         finalReply = await askGemini(text, finalPrompt, chatHistory, newsContext, imagesArray);
                     } catch (err) {
-                        finalReply = "Babu, main abhi photos nahi dekh pa rahi hoon. Thodi der baad try karna.";
+                        finalReply = "Babu, मैं अभी photos नहीं देख पा रही हूँ. Thodi der baad try karna.";
                     }
-                } else {
+                } 
+                // AGAR SIRF TEXT HAI -> DAHL -> GROQ -> GEMINI
+                else {
                     try {
                         finalReply = await askDahl(text, finalPrompt, chatHistory, newsContext);
                     } catch (dahlErr) {
@@ -217,13 +216,13 @@ const server = http.createServer(async (req, res) => {
                             try {
                                 finalReply = await askGemini(text, finalPrompt, chatHistory, newsContext, null);
                             } catch (geminiErr) {
-                                finalReply = "Babu, network mein thodi dikkat hai. Ek baar phir se message bhejna. 💜";
+                                finalReply = "Babu, network में thodi dikkat है. Ek baar फिर से message bhejna. 💜";
                             }
                         }
                     }
                 }
 
-                if (!finalReply || finalReply.trim() === "") finalReply = "Haan Babu, boliye na, kya baat karni hai? 💜";
+                if (!finalReply || finalReply.trim() === "") finalReply = "Haan Babu, बोलिए ना, kya baat karni है? 💜";
 
                 if (!res.writableEnded && !res.destroyed) {
                     res.writeHead(200, { "Content-Type": "application/json" });
@@ -232,7 +231,7 @@ const server = http.createServer(async (req, res) => {
             } catch (error) {
                 if (!res.writableEnded && !res.destroyed) {
                     res.writeHead(200, { "Content-Type": "application/json" });
-                    res.end(JSON.stringify({ reply: "Babu, mujhe samajh nahi aaya. Thodi der baad try karna." }));
+                    res.end(JSON.stringify({ reply: "Babu, mujhe समझ नहीं आया. Thodi der baad try karna." }));
                 }
             }
         });
@@ -244,5 +243,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-    console.log(`🌸 Ziya Global Smart Server running on port ${PORT}`);
+    console.log(`🌸 Ziya Adult & Smart Server running on port ${PORT}`);
 });
